@@ -1,0 +1,180 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Workspace {
+  id         String      @id @default(cuid())
+  name       String
+  demo       Boolean     @default(false)
+  expiresAt  DateTime?
+  createdAt  DateTime    @default(now())
+  users      User[]
+  sessions   Session[]
+  portfolios Portfolio[]
+  watchlists Watchlist[]
+  audits     Audit[]
+
+  @@index([demo, expiresAt])
+}
+
+model User {
+  id           String    @id @default(cuid())
+  email        String    @unique
+  name         String
+  passwordHash String
+  workspaceId  String
+  workspace    Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  sessions     Session[]
+  createdAt    DateTime  @default(now())
+}
+
+model Session {
+  id          String    @id @default(cuid())
+  tokenHash   String    @unique
+  userId      String?
+  user        User?     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  workspaceId String
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  expiresAt   DateTime
+  createdAt   DateTime  @default(now())
+
+  @@index([workspaceId])
+  @@index([expiresAt])
+}
+
+model Instrument {
+  symbol     String     @id
+  name       String
+  sector     String     @default("Unclassified")
+  assetClass String     @default("EQUITY")
+  currency   String     @default("USD")
+  candles    Candle[]
+  positions  Position[]
+  trades     Trade[]
+}
+
+model Candle {
+  id         String     @id @default(cuid())
+  symbol     String
+  instrument Instrument @relation(fields: [symbol], references: [symbol], onDelete: Cascade)
+  source     String
+  date       DateTime   @db.Date
+  open       Decimal    @db.Decimal(24, 8)
+  high       Decimal    @db.Decimal(24, 8)
+  low        Decimal    @db.Decimal(24, 8)
+  close      Decimal    @db.Decimal(24, 8)
+  volume     BigInt
+  fetchedAt  DateTime   @default(now())
+
+  @@unique([symbol, source, date])
+  @@index([source, symbol, date])
+}
+
+model ProviderState {
+  symbol        String    @id
+  lastAttemptAt DateTime?
+  lastSuccessAt DateTime?
+  error         String?
+  leasedUntil   DateTime?
+}
+
+model Portfolio {
+  id            String     @id @default(cuid())
+  workspaceId   String
+  workspace     Workspace  @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  name          String
+  description   String     @default("")
+  source        String     @default("SIMULATED")
+  benchmark     String     @default("SPY")
+  riskFreeRate  Float      @default(0.03)
+  cash          Decimal    @default(0) @db.Decimal(24, 8)
+  targetWeights Json       @default("{}")
+  createdAt     DateTime   @default(now())
+  positions     Position[]
+  trades        Trade[]
+  flows         CashFlow[]
+
+  @@index([workspaceId])
+}
+
+model Position {
+  id          String     @id @default(cuid())
+  portfolioId String
+  portfolio   Portfolio  @relation(fields: [portfolioId], references: [id], onDelete: Cascade)
+  symbol      String
+  instrument  Instrument @relation(fields: [symbol], references: [symbol], onDelete: Restrict)
+  quantity    Decimal    @db.Decimal(24, 8)
+  costBasis   Decimal    @db.Decimal(24, 8)
+  updatedAt   DateTime   @updatedAt
+
+  @@unique([portfolioId, symbol])
+}
+
+model Trade {
+  id                String     @id @default(cuid())
+  portfolioId       String
+  portfolio         Portfolio  @relation(fields: [portfolioId], references: [id], onDelete: Cascade)
+  symbol            String
+  instrument        Instrument @relation(fields: [symbol], references: [symbol], onDelete: Restrict)
+  side              String
+  quantity          Decimal    @db.Decimal(24, 8)
+  price             Decimal    @db.Decimal(24, 8)
+  priceAsOf         DateTime   @db.Date
+  fee               Decimal    @db.Decimal(24, 8)
+  cashDelta         Decimal    @db.Decimal(24, 8)
+  costBasisReleased Decimal    @default(0) @db.Decimal(24, 8)
+  realizedPnl       Decimal    @default(0) @db.Decimal(24, 8)
+  idempotencyKey    String
+  executedAt        DateTime   @default(now())
+
+  @@unique([portfolioId, idempotencyKey])
+  @@index([portfolioId, executedAt])
+}
+
+model CashFlow {
+  id             String    @id @default(cuid())
+  portfolioId    String
+  portfolio      Portfolio @relation(fields: [portfolioId], references: [id], onDelete: Cascade)
+  kind           String
+  amount         Decimal   @db.Decimal(24, 8)
+  idempotencyKey String
+  executedAt     DateTime  @default(now())
+
+  @@unique([portfolioId, idempotencyKey])
+  @@index([portfolioId, executedAt])
+}
+
+model Watchlist {
+  id          String    @id @default(cuid())
+  workspaceId String
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  name        String
+  symbols     String[]
+  createdAt   DateTime  @default(now())
+
+  @@index([workspaceId])
+}
+
+model Audit {
+  id          String    @id @default(cuid())
+  workspaceId String
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  action      String
+  detail      String
+  createdAt   DateTime  @default(now())
+
+  @@index([workspaceId, createdAt])
+}
+
+model RateLimit {
+  key       String   @id
+  count     Int
+  expiresAt DateTime
+
+  @@index([expiresAt])
+}
